@@ -28,11 +28,16 @@ import android.view.View;
  * @author Clark Scheff
  */
 public class TrackPad extends View implements View.OnTouchListener {
+    private static long CLICK_TIME_MS = 300;
+
     PointF mLastPosition = new PointF();
     OnTrackpadMovementListener mListener = null;
+    private int mPointerCount = 0;
+    private long mLastDownTime = System.currentTimeMillis();
 
     public interface OnTrackpadMovementListener {
-        public void onMove(float dx, float dy);
+        public void onMove(float dx, float dy, boolean scroll);
+        public void onClick();
     }
 
     public TrackPad(Context context) {
@@ -54,16 +59,36 @@ public class TrackPad extends View implements View.OnTouchListener {
 
     @Override
     public boolean onTouch(View v, MotionEvent event) {
+        mPointerCount = event.getPointerCount();
+        long time = System.currentTimeMillis();
         switch (event.getActionMasked()) {
+            case MotionEvent.ACTION_POINTER_DOWN:
             case MotionEvent.ACTION_DOWN:
-                mLastPosition.set(event.getX(), event.getY());
+                if (mPointerCount < 2) {
+                    mLastPosition.set(event.getX(), event.getY());
+                    mLastDownTime = System.currentTimeMillis();
+                }
                 break;
             case MotionEvent.ACTION_MOVE:
-                float dx = event.getX() - mLastPosition.x;
-                float dy = event.getY() - mLastPosition.y;
+                float dx = 0f;
+                float dy = 0f;
+                if (mPointerCount < 2) {
+                    dx = event.getX() - mLastPosition.x;
+                    dy = event.getY() - mLastPosition.y;
+                    mLastPosition.set(event.getX(), event.getY());
+                } else {
+                    dx = event.getX(0) - mLastPosition.x;
+                    dy = event.getY(0) - mLastPosition.y;
+                    mLastPosition.set(event.getX(0), event.getY(0));
+                }
                 if (mListener != null)
-                    mListener.onMove(dx, dy);
-                mLastPosition.set(event.getX(), event.getY());
+                    mListener.onMove(dx, dy, mPointerCount > 1);
+                break;
+            case MotionEvent.ACTION_UP:
+                if (mPointerCount < 2 && (time - mLastDownTime) <= CLICK_TIME_MS) {
+                    if (mListener != null)
+                        mListener.onClick();
+                }
                 break;
         }
         return true;

@@ -22,18 +22,21 @@ import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothSocket;
 import android.content.DialogInterface;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.MotionEvent;
 import android.view.View;
 import android.widget.ArrayAdapter;
+import android.widget.SeekBar;
 
 import java.io.IOException;
 import java.io.OutputStream;
 import java.util.Set;
 import java.util.UUID;
 
-public class BtMouseActivity extends Activity implements TrackPad.OnTrackpadMovementListener {
+public class BtMouseActivity extends Activity implements TrackPad.OnTrackpadMovementListener,
+        SeekBar.OnSeekBarChangeListener {
 
     private static final String TAG = "BtShiznit";
     private static final String UUID_SPP = "00001101-0000-1000-8000-00805f9b34fb";
@@ -47,6 +50,7 @@ public class BtMouseActivity extends Activity implements TrackPad.OnTrackpadMove
     private OutputStream mBtOutputStream;
     private boolean mLeftPressed = false;
     private boolean mRightPressed = false;
+    private float mSensitivty = 1f;
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -58,6 +62,11 @@ public class BtMouseActivity extends Activity implements TrackPad.OnTrackpadMove
 
         findViewById(R.id.left_button).setOnTouchListener(mButtonListener);
         findViewById(R.id.right_button).setOnTouchListener(mButtonListener);
+
+        SeekBar seekBar = (SeekBar) findViewById(R.id.sensitivity);
+        seekBar.setOnSeekBarChangeListener(this);
+        SharedPreferences prefs = getPreferences(MODE_PRIVATE);
+        seekBar.setProgress(prefs.getInt("sensitivity", 50));
 
         mBluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
         if (mBluetoothAdapter == null)
@@ -82,7 +91,7 @@ public class BtMouseActivity extends Activity implements TrackPad.OnTrackpadMove
                     else
                         mRightPressed = true;
                     try {
-                        sendData((short)0, (short)0, mLeftPressed, mRightPressed);
+                        sendData((short)0, (short)0, mLeftPressed, mRightPressed, false);
                     } catch (IOException e) {
                     }
                     break;
@@ -92,7 +101,7 @@ public class BtMouseActivity extends Activity implements TrackPad.OnTrackpadMove
                     else
                         mRightPressed = false;
                     try {
-                        sendData((short)0, (short)0, mLeftPressed, mRightPressed);
+                        sendData((short)0, (short)0, mLeftPressed, mRightPressed, false);
                     } catch (IOException e) {
                     }
                     break;
@@ -102,8 +111,8 @@ public class BtMouseActivity extends Activity implements TrackPad.OnTrackpadMove
     };
 
     @Override
-    protected void onPause() {
-        super.onPause();
+    protected void onDestroy() {
+        super.onDestroy();
         if (mBtSocket != null && mBtSocket.isConnected()) {
             if (mBtOutputStream != null) {
                 try {
@@ -178,16 +187,30 @@ public class BtMouseActivity extends Activity implements TrackPad.OnTrackpadMove
     }
 
     @Override
-    public void onMove(float dx, float dy) {
+    public void onMove(float dx, float dy, boolean scroll) {
+        if (!scroll) {
+            dx *= mSensitivty;
+            dy *= mSensitivty;
+        }
         if (mBtSocket != null && mBtSocket.isConnected()) {
             try {
-                sendData((short)dx, (short)dy, mLeftPressed, mRightPressed);
+                sendData((short)dx, (short)dy, mLeftPressed, mRightPressed, scroll);
             } catch (IOException e) {
             }
         }
     }
 
-    private void sendData(short x, short y, boolean leftPressed, boolean rightPressed) throws IOException {
+    @Override
+    public void onClick() {
+        try {
+            sendData((short)0, (short)0, true, mRightPressed, false);
+            sendData((short)0, (short)0, false, mRightPressed, false);
+        } catch (IOException e) {
+        }
+    }
+
+    private void sendData(short x, short y, boolean leftPressed, boolean rightPressed, boolean scroll)
+            throws IOException {
         byte[] data = new byte[6];
         // [0] start byte
         data[0] = COMMAND_START;
@@ -197,9 +220,29 @@ public class BtMouseActivity extends Activity implements TrackPad.OnTrackpadMove
         // [3:4] dy - least significant byte first
         data[3] = (byte)(y & 0xFF);
         data[4] = (byte)(y>>8 & 0xFF);
-        // [5] left/right pressed state packed into last byte
-        data[5] = (byte)((leftPressed ? 2 : 0) | (rightPressed ? 1 : 0));
+        // [5] scroll and left/right pressed state packed into last byte
+        data[5] = (byte)((scroll ? 4 : 0) | (leftPressed ? 2 : 0) | (rightPressed ? 1 : 0));
         mBtOutputStream.write(data);
+    }
+
+    @Override
+    public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+        mSensitivty = 1f + (progress/100f * 3f);
+
+        // store this value so we can restore it when the application runs again
+        getPreferences(MODE_PRIVATE).edit()
+        .putInt("sensitivity", progress)
+        .commit();
+    }
+
+    @Override
+    public void onStartTrackingTouch(SeekBar seekBar) {
+
+    }
+
+    @Override
+    public void onStopTrackingTouch(SeekBar seekBar) {
+
     }
 
     private class ConnectThread extends Thread {

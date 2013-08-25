@@ -20,7 +20,7 @@
 #
 # dependencies:
 #       PyBluez - https://code.google.com/p/pybluez/
-#       PyMouse - https://github.com/pepijndevos/PyMouse
+#       PyMouse - https://github.com/0xD34D/PyMouse
 #       XLib (Linux only) - http://python-xlib.sourceforge.net/
 
 from bluetooth import *
@@ -63,6 +63,7 @@ while True:
                 movement = unpack('hh', data[1:5])
                 left = ord(data[5]) & 2 != 0
                 right = ord(data[5]) & 1 != 0
+                scroll = ord(data[5]) & 4 != 0
                 if leftPressed != left:
                     leftPressed = left
                     if left:
@@ -75,8 +76,13 @@ while True:
                         m.press(position[0], position[1], 2)
                     else:
                         m.release(position[0], position[1], 2)
-                if movement[0] != 0 or movement[1] != 0:
+                if not scroll and (movement[0] != 0 or movement[1] != 0):
                     m.move(position[0] + movement[0], position[1] + movement[1])
+                elif scroll:
+                    if movement[1] >= 0:
+                        m.scroll(position[0], position[1], False, movement[1])
+                    else:
+                        m.scroll(position[0], position[1], True, -movement[1])
     except IOError:
         pass
 
